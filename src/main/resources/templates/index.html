@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: pageHead('bp.page.index')}"></head>
+<body class="bp-body">
+<header th:replace="~{fragments/layout :: siteHeader}"></header>
+
+<main class="bp-main">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-9 col-xl-8">
+
+                <div class="text-center bp-hero">
+                    <h1 class="bp-hero__title" th:text="#{bp.index.title}">Blood Pressure Calculator</h1>
+                    <p class="bp-hero__subtitle" th:text="#{bp.index.subtitle}">Subtitle</p>
+                </div>
+
+                <div class="card bp-card">
+                    <div class="card-body">
+                        <form method="post" th:action="@{/}" th:object="${bp}" novalidate id="bpForm">
+
+                            <div class="alert d-flex align-items-start gap-2 bp-alert" role="alert"
+                                 th:if="${#fields.hasGlobalErrors()}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                                     stroke-linejoin="round" aria-hidden="true">
+                                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                </svg>
+                                <ul class="mb-0 ps-0">
+                                    <li th:each="err : ${#fields.globalErrors()}" th:text="${err}" style="list-style:none;">error</li>
+                                </ul>
+                            </div>
+
+                            <div class="row g-4">
+                                <div class="col-sm-6">
+                                    <label for="systolic" class="form-label bp-label">
+                                        <span th:text="#{bp.form.systolic}">Systolic</span>
+                                        <span class="bp-unit" th:text="#{bp.form.unit}">mmHg</span>
+                                    </label>
+                                    <input type="number" inputmode="numeric" th:field="*{systolic}"
+                                           class="form-control form-control-lg"
+                                           th:classappend="${#fields.hasErrors('systolic')} ? 'is-invalid'"
+                                           placeholder="120" min="70" max="190" required />
+                                    <div class="invalid-feedback" th:if="${#fields.hasErrors('systolic')}"
+                                         th:errors="*{systolic}">Systolic error</div>
+                                    <div class="form-text" th:text="#{bp.form.systolic.hint}">Range</div>
+                                </div>
+                                <div class="col-sm-6">
+                                    <label for="diastolic" class="form-label bp-label">
+                                        <span th:text="#{bp.form.diastolic}">Diastolic</span>
+                                        <span class="bp-unit" th:text="#{bp.form.unit}">mmHg</span>
+                                    </label>
+                                    <input type="number" inputmode="numeric" th:field="*{diastolic}"
+                                           class="form-control form-control-lg"
+                                           th:classappend="${#fields.hasErrors('diastolic')} ? 'is-invalid'"
+                                           placeholder="80" min="40" max="100" required />
+                                    <div class="invalid-feedback" th:if="${#fields.hasErrors('diastolic')}"
+                                         th:errors="*{diastolic}">Diastolic error</div>
+                                    <div class="form-text" th:text="#{bp.form.diastolic.hint}">Range</div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-2 mt-4">
+                                <button type="submit" class="btn btn-primary btn-lg bp-btn"
+                                        th:text="#{bp.form.submit}">Check Category</button>
+                                <button type="reset" class="btn btn-outline-secondary btn-lg"
+                                        th:text="#{bp.form.reset}">Reset</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card bp-result-card mt-4"
+                     th:if="${!hasErrors and bp.category != null}"
+                     th:classappend="' bp-cat-' + ${bp.category.cssClass}">
+                    <div class="card-body">
+                        <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-3">
+                            <div class="bp-result-icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                                     stroke-linejoin="round">
+                                    <path d="M3 12h4l2-5 3 10 2-5h7"/>
+                                </svg>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="bp-result-reading">
+                                    <span th:text="${bp.systolic}">120</span><span class="bp-slash">/</span><span th:text="${bp.diastolic}">80</span>
+                                    <span class="bp-unit ms-1" th:text="#{bp.form.unit}">mmHg</span>
+                                </div>
+                                <h2 class="bp-result-name" th:text="${bp.category.displayName}">Category</h2>
+                                <p class="bp-result-desc mb-0" th:text="${bp.category.description}">Description</p>
+                            </div>
+                        </div>
+
+                        <div class="bp-guidance" th:if="${!bp.category.tips.isEmpty()}">
+                            <h3 class="bp-guidance__title" th:text="#{bp.guidance.title}">What can help</h3>
+                            <ul class="bp-guidance__list">
+                                <li th:each="tip : ${bp.category.tips}" th:text="${tip}">tip</li>
+                            </ul>
+                        </div>
+
+                        <div class="bp-cta" th:if="${bp.category.consultDoctor}">
+                            <div class="bp-cta__icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                                     stroke-linejoin="round">
+                                    <path d="M8 2v4M16 2v4M3 10h18"/>
+                                    <rect x="3" y="4" width="18" height="18" rx="2"/>
+                                    <path d="M12 14v4M10 16h4"/>
+                                </svg>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h3 class="bp-cta__title" th:text="#{bp.doctor.title}">Speak to a doctor</h3>
+                                <p class="bp-cta__text mb-3" th:text="#{bp.doctor.text}">A reading in this range should be reviewed by a healthcare professional. Book an appointment with your GP or ask a pharmacist for advice.</p>
+                                <div class="bp-cta__actions">
+                                    <a class="btn btn-danger" href="https://www.nhs.uk/conditions/high-blood-pressure/"
+                                       target="_blank" rel="noopener" th:text="#{bp.doctor.link.nhs}">High blood pressure (NHS)</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bp-cta bp-cta--emergency" th:if="${bp.systolic >= 180 or bp.diastolic >= 120}">
+                            <div class="bp-cta__icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                                     stroke-linejoin="round">
+                                    <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
+                                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                                </svg>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h3 class="bp-cta__title" th:text="#{bp.emergency.title}">This reading is very high</h3>
+                                <p class="bp-cta__text mb-3" th:text="#{bp.emergency.text}">A reading of 180/120 or above may need urgent care. If you feel unwell, call 999.</p>
+                                <div class="bp-cta__actions">
+                                    <a class="btn btn-danger" href="tel:999" th:text="#{bp.emergency.link.phone}">Call 999</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card bp-legend mt-4">
+                    <div class="card-body">
+                        <h3 class="bp-legend-title" th:text="#{bp.legend.title}">Blood Pressure Ranges</h3>
+                        <div class="table-responsive">
+                            <table class="table align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" th:text="#{bp.legend.category}">Category</th>
+                                        <th scope="col" th:text="#{bp.legend.systolic}">Systolic</th>
+                                        <th scope="col" th:text="#{bp.legend.diastolic}">Diastolic</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <th scope="row"><span class="bp-dot bp-cat-low"></span><span th:text="#{bp.legend.low}">Low</span></th>
+                                        <td th:text="#{bp.legend.low.sys}">below 90</td>
+                                        <td th:text="#{bp.legend.low.dia}">below 60</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row"><span class="bp-dot bp-cat-ideal"></span><span th:text="#{bp.legend.ideal}">Ideal</span></th>
+                                        <td th:text="#{bp.legend.ideal.sys}">90 - 120</td>
+                                        <td th:text="#{bp.legend.ideal.dia}">60 - 80</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row"><span class="bp-dot bp-cat-prehigh"></span><span th:text="#{bp.legend.prehigh}">Pre-High</span></th>
+                                        <td th:text="#{bp.legend.prehigh.sys}">121 - 140</td>
+                                        <td th:text="#{bp.legend.prehigh.dia}">81 - 90</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row"><span class="bp-dot bp-cat-high"></span><span th:text="#{bp.legend.high}">High</span></th>
+                                        <td th:text="#{bp.legend.high.sys}">141 - 190</td>
+                                        <td th:text="#{bp.legend.high.dia}">91 - 100</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="bp-disclaimer mb-0" th:text="#{bp.disclaimer}">Disclaimer</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: siteFooter}"></footer>
+<footer th:replace="~{fragments/layout :: siteScripts}"></footer>
+</body>
+</html>

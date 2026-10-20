@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: pageHead('bp.page.privacy')}"></head>
+<body class="bp-body">
+<header th:replace="~{fragments/layout :: siteHeader}"></header>
+
+<main class="bp-main">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-9 col-xl-8">
+                <div class="card bp-card">
+                    <div class="card-body">
+                        <h1 class="bp-hero__title text-start" th:text="#{bp.privacy.title}">Privacy Policy</h1>
+                        <p class="text-secondary mb-0" th:text="#{bp.privacy.body}">Body</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: siteFooter}"></footer>
+<footer th:replace="~{fragments/layout :: siteScripts}"></footer>
+</body>
+</html>
