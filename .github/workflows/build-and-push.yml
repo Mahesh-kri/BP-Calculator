@@ -134,107 +134,31 @@ jobs:
     environment: production
     permissions:
       contents: read
-      id-token: write
     concurrency:
       group: production-deploy
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Azure login
-        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+      - name: Deploy to staging slot (auto-swaps to production)
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          slot-name: staging
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          images: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
 
-      - name: Deploy new revision with 0% traffic
+      - name: Smoke test production after swap
         env:
-          RG: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          APP: ${{ secrets.AZURE_CONTAINERAPP_NAME }}
+          APP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}
         run: |
           set -euo pipefail
-          IMAGE="${IMAGE_NAME}:sha-${GITHUB_SHA}"
-          SUFFIX="sha-${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"
-          echo "Deploying ${IMAGE} as revision suffix ${SUFFIX}"
-
-          az containerapp revision set-mode -g "$RG" -n "$APP" --mode multiple
-
-          OLD_REV=$(az containerapp ingress traffic show -g "$RG" -n "$APP" \
-            --query '[?weight > `0`].revisionName | [0]' -o tsv)
-          if [ -z "$OLD_REV" ]; then
-            OLD_REV=$(az containerapp revision list -g "$RG" -n "$APP" \
-              --query '[?properties.active].name | [-1]' -o tsv)
-          fi
-          echo "OLD_REV=$OLD_REV" >> "$GITHUB_ENV"
-
-          az containerapp update -g "$RG" -n "$APP" \
-            --image "$IMAGE" --revision-suffix "$SUFFIX"
-
-          NEW_REV=$(az containerapp revision list -g "$RG" -n "$APP" \
-            --query '[].name' -o tsv | grep -- "$SUFFIX" | head -1)
-          if [ -z "$NEW_REV" ]; then
-            echo "Could not find new revision for suffix $SUFFIX" >&2
-            exit 1
-          fi
-          echo "NEW_REV=$NEW_REV" >> "$GITHUB_ENV"
-
-          az containerapp ingress traffic set -g "$RG" -n "$APP" \
-            --revision-weight "$OLD_REV=100" "$NEW_REV=0"
-
-      - name: Wait for new revision to be ready
-        env:
-          RG: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          APP: ${{ secrets.AZURE_CONTAINERAPP_NAME }}
-        run: |
-          set -euo pipefail
+          URL="https://${APP_NAME}.azurewebsites.net/actuator/health"
+          echo "Waiting for auto swap and healthy response: $URL"
           for i in $(seq 1 30); do
-            STATE=$(az containerapp revision show -g "$RG" -n "$APP" \
-              --revision "$NEW_REV" --query properties.provisioningState -o tsv 2>/dev/null || true)
-            [ "$STATE" = "Provisioned" ] && break
-            echo "Revision $NEW_REV state: ${STATE:-unknown} ($i/30)"
+            if curl -fsS "$URL" | grep -q '"status":"UP"'; then
+              echo "Production is healthy"
+              exit 0
+            fi
             sleep 10
           done
-          [ "$STATE" = "Provisioned" ] || { echo "Revision not provisioned" >&2; exit 1; }
-
-      - name: Smoke test new revision
-        env:
-          RG: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          APP: ${{ secrets.AZURE_CONTAINERAPP_NAME }}
-        run: |
-          set -euo pipefail
-          FQDN=$(az containerapp revision show -g "$RG" -n "$APP" \
-            --revision "$NEW_REV" --query properties.fqdn -o tsv)
-          echo "Smoke testing https://$FQDN/actuator/health"
-          HEALTHY=0
-          for i in $(seq 1 30); do
-            if curl -fsS "https://$FQDN/actuator/health" | grep -q '"status":"UP"'; then
-              HEALTHY=1
-              break
-            fi
-            sleep 5
-          done
-          [ "$HEALTHY" = "1" ] || { echo "Health check failed" >&2; exit 1; }
-
-      - name: Shift 100% traffic to new revision (blue-green cutover)
-        env:
-          RG: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          APP: ${{ secrets.AZURE_CONTAINERAPP_NAME }}
-        run: |
-          set -euo pipefail
-          az containerapp ingress traffic set -g "$RG" -n "$APP" \
-            --revision-weight "$OLD_REV=0" "$NEW_REV=100"
-
-      - name: Roll back on failure
-        if: failure()
-        env:
-          RG: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          APP: ${{ secrets.AZURE_CONTAINERAPP_NAME }}
-        run: |
-          set +e
-          if [ -n "${NEW_REV:-}" ]; then
-            az containerapp revision deactivate -g "$RG" -n "$APP" \
-              --revision "$NEW_REV" || true
-          fi
-          if [ -n "${OLD_REV:-}" ]; then
-            az containerapp ingress traffic set -g "$RG" -n "$APP" \
-              --revision-weight "$OLD_REV=100" || true
-          fi
+          echo "Production health check failed" >&2
+          exit 1

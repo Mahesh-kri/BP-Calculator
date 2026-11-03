@@ -63,9 +63,8 @@ Set these repository/environment secrets (Settings -> Secrets and variables -> A
 | `SONAR_ORGANIZATION` | SonarCloud organization key |
 | `SONAR_PROJECT_KEY` | SonarCloud project key |
 | `NVD_API_KEY` | NVD API key for dependency-check (recommended; without it the NVD sync is slow) |
-| `AZURE_CREDENTIALS` | Azure service principal JSON for `azure/login` |
-| `AZURE_RESOURCE_GROUP` | Resource group of the Container App |
-| `AZURE_CONTAINERAPP_NAME` | Container App name |
+| `AZURE_WEBAPP_NAME` | Web App name (e.g. `bpcalculator-abcd`) |
+| `AZURE_WEBAPP_PUBLISH_PROFILE` | Publish profile XML of the **staging** deployment slot |
 
 Image tags produced: `latest` (default branch), branch name, `sha-<commit>`, and `v1.2.3` / `1.2` for git tags. Pin deploys to an immutable tag (`sha-...` or `vX.Y.Z`) rather than `latest`.
 
@@ -105,37 +104,33 @@ mvn -B -Psecurity org.owasp:dependency-check-maven:check -DnvdApiKey=<key>
 
 **Dependabot** — `.github/dependabot.yml` opens weekly PRs for Maven, GitHub Actions, and Docker base-image updates.
 
-## Deploy to Azure Container Apps
+## Deploy to Azure Web App for Containers
 
-The app is stateless (no database; theme persists in browser `localStorage`), so multiple revisions can run without sticky sessions.
+The app is stateless (no database; theme persists in browser `localStorage`), so a staging slot can run alongside production without sticky sessions.
 
-The deploy job uses **multiple revision mode** for blue-green:
+The deploy job uses **publish profile** authentication (no Entra ID / service principal needed) and App Service **Auto swap** for blue-green:
 
-1. `az containerapp update` creates a new revision from the immutable `sha-<commit>` image.
-2. The new revision starts at **0% traffic** while the current revision keeps **100%**.
-3. The job waits for `Provisioned` and smoke tests `/actuator/health` on the new revision's FQDN.
-4. On success, traffic shifts to the new revision (`old=0`, `new=100`); the old revision is kept active for instant rollback.
-5. On any failure, the new revision is deactivated and traffic is sent back to the old revision.
+1. `azure/webapps-deploy` deploys the immutable `sha-<commit>` image to the **staging** slot using the slot's publish profile.
+2. Auto swap (configured once on the staging slot) warms up staging and swaps it into production.
+3. The job then polls `https://<app>.azurewebsites.net/actuator/health` until production is healthy.
+4. If deployment fails, production is untouched; if the swap fails, App Service keeps the previous production slot.
 
-### One-time setup
+### One-time setup (Azure portal, no Entra ID)
 
-Create a service principal scoped to the resource group and store its JSON as `AZURE_CREDENTIALS`:
+1. **Create a Web App for Containers** (Linux). Image: `youruser/bpcalculator`, tag `latest` (CI overwrites the tag per deploy). App Service pulls from Docker Hub.
+2. **Configuration → General settings**: set **Health check path** to `/actuator/health`. Add application settings `WEBSITES_PORT=5000` and `SERVER_PORT=5000`.
+3. **Deployment slots → Add slot**, name it `staging` (requires **Standard S1 or higher**; slots are not available on Free/Basic).
+4. Open the **staging** slot → **Deployment Center → Manage publish profile → Download**. Paste the XML into the `AZURE_WEBAPP_PUBLISH_PROFILE` secret.
+5. Open the **staging** slot → **Configuration → General settings → Auto swap** → target slot **production** → Save.
+6. Add `AZURE_WEBAPP_NAME` (Settings → Secrets → Actions).
 
-```sh
-az ad sp create-for-rbac \
-  --name bpcalculator-github \
-  --role contributor \
-  --scopes /subscriptions/<sub>/resourceGroups/<rg> \
-  --sdk-auth
-```
-
-Then add the secrets listed above.
+> Auto swap is configured on the staging slot, so every successful deployment to staging is swapped into production automatically. No ARM/Entra call is made by CI.
 
 ### Approval / authorization gate
 
 The `deploy` job uses `environment: production`. In **Settings -> Environments -> production**, add **Required reviewers** (and optionally a wait timer or deployment branch rule limited to `main`). A deploy then pauses until a reviewer approves it, which is the authorization gate for production.
 
-Keep image tags immutable (`sha-...`/`vX.Y.Z`) so each revision is reproducible.
+Keep image tags immutable (`sha-...`/`vX.Y.Z`) so each deployment is reproducible.
 
 
 ## Features
