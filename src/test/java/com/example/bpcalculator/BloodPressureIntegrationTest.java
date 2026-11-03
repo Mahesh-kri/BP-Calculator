@@ -60,6 +60,14 @@ class BloodPressureIntegrationTest {
     }
 
     @Test
+    void privacyPageRenders() throws Exception {
+        mockMvc.perform(get("/privacy"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("privacy"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Privacy Policy")));
+    }
+
+    @Test
     void unknownPathIsNotHandled() throws Exception {
         mockMvc.perform(get("/does-not-exist"))
                 .andExpect(status().isNotFound());

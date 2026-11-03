@@ -44,16 +44,18 @@ class BloodPressureTest {
     }
 
     @Test
-    void preHighWhenSystolic121To140OrDiastolic81To90() {
+    void preHighWhenSystolic121To139OrDiastolic81To89() {
         assertThat(bp(130, 80).getCategory()).isEqualTo(BpCategory.PRE_HIGH);
         assertThat(bp(120, 85).getCategory()).isEqualTo(BpCategory.PRE_HIGH);
-        assertThat(bp(140, 90).getCategory()).isEqualTo(BpCategory.PRE_HIGH);
+        assertThat(bp(139, 89).getCategory()).isEqualTo(BpCategory.PRE_HIGH);
     }
 
     @Test
-    void highWhenSystolicAtLeast141OrDiastolicAtLeast91() {
+    void highWhenSystolicAtLeast140OrDiastolicAtLeast90() {
+        assertThat(bp(140, 90).getCategory()).isEqualTo(BpCategory.HIGH);
+        assertThat(bp(140, 80).getCategory()).isEqualTo(BpCategory.HIGH);
+        assertThat(bp(120, 90).getCategory()).isEqualTo(BpCategory.HIGH);
         assertThat(bp(141, 80).getCategory()).isEqualTo(BpCategory.HIGH);
-        assertThat(bp(120, 91).getCategory()).isEqualTo(BpCategory.HIGH);
         assertThat(bp(180, 100).getCategory()).isEqualTo(BpCategory.HIGH);
     }
 
