@@ -63,8 +63,9 @@ Set these repository/environment secrets (Settings -> Secrets and variables -> A
 | `SONAR_ORGANIZATION` | SonarCloud organization key |
 | `SONAR_PROJECT_KEY` | SonarCloud project key |
 | `NVD_API_KEY` | NVD API key for dependency-check (recommended; without it the NVD sync is slow) |
-| `AZURE_WEBAPP_NAME` | Web App name (e.g. `bpcalculator-abcd`) |
-| `AZURE_WEBAPP_PUBLISH_PROFILE` | Publish profile XML of the **staging** deployment slot |
+| `AZURE_WEBAPP_NAME` | Web App name (e.g. `bpcalculator`) |
+| `AZURE_WEBAPP_URL` | Base URL, e.g. `https://bpcalculator-ggbkhjemapd4d0hd.austriaeast-01.azurewebsites.net` |
+| `AZURE_WEBAPP_PUBLISH_PROFILE` | Publish profile XML (production slot, or the staging slot when using slots) |
 
 Image tags produced: `latest` (default branch), branch name, `sha-<commit>`, and `v1.2.3` / `1.2` for git tags. Pin deploys to an immutable tag (`sha-...` or `vX.Y.Z`) rather than `latest`.
 
@@ -108,23 +109,30 @@ mvn -B -Psecurity org.owasp:dependency-check-maven:check -DnvdApiKey=<key>
 
 The app is stateless (no database; theme persists in browser `localStorage`), so a staging slot can run alongside production without sticky sessions.
 
-The deploy job uses **publish profile** authentication (no Entra ID / service principal needed) and App Service **Auto swap** for blue-green:
+The deploy job uses **publish profile** authentication (no Entra ID / service principal needed). It deploys the immutable `sha-<commit>` image with `azure/webapps-deploy`, then polls `AZURE_WEBAPP_URL/actuator/health`.
 
-1. `azure/webapps-deploy` deploys the immutable `sha-<commit>` image to the **staging** slot using the slot's publish profile.
-2. Auto swap (configured once on the staging slot) warms up staging and swaps it into production.
-3. The job then polls `https://<app>.azurewebsites.net/actuator/health` until production is healthy.
-4. If deployment fails, production is untouched; if the swap fails, App Service keeps the previous production slot.
+### Free (F1) plan — direct deploy
+
+Free/Basic tiers have no deployment slots, so the image is deployed straight to production. The app restarts on the new image. Set the `AZURE_WEBAPP_PUBLISH_PROFILE` secret to the **production** publish profile, and leave the `DEPLOY_SLOT` repository variable unset.
+
+### Standard S1+ — slot-based blue-green
+
+On Standard S1 or higher, use the `staging` slot + Auto swap:
+
+1. Create the **staging** slot (clone settings from production).
+2. Download the **staging slot's** publish profile into `AZURE_WEBAPP_PUBLISH_PROFILE`.
+3. On the staging slot: **Configuration → General settings → Auto swap → On**, target **production**.
+4. Add a repository **variable** `DEPLOY_SLOT=staging` (Settings → Secrets and variables → Actions → Variables).
+
+Flow: `webapps-deploy` pushes the image to staging → App Service warms up and auto-swaps into production → the job smoke-tests production. No ARM/Entra call is made by CI.
 
 ### One-time setup (Azure portal, no Entra ID)
 
-1. **Create a Web App for Containers** (Linux). Image: `youruser/bpcalculator`, tag `latest` (CI overwrites the tag per deploy). App Service pulls from Docker Hub.
-2. **Configuration → General settings**: set **Health check path** to `/actuator/health`. Add application settings `WEBSITES_PORT=5000` and `SERVER_PORT=5000`.
-3. **Deployment slots → Add slot**, name it `staging` (requires **Standard S1 or higher**; slots are not available on Free/Basic).
-4. Open the **staging** slot → **Deployment Center → Manage publish profile → Download**. Paste the XML into the `AZURE_WEBAPP_PUBLISH_PROFILE` secret.
-5. Open the **staging** slot → **Configuration → General settings → Auto swap** → target slot **production** → Save.
-6. Add `AZURE_WEBAPP_NAME` (Settings → Secrets → Actions).
-
-> Auto swap is configured on the staging slot, so every successful deployment to staging is swapped into production automatically. No ARM/Entra call is made by CI.
+1. Use an existing **Web App for Containers** (Linux) or create one. It can pull `youruser/bpcalculator:latest` from Docker Hub.
+2. **Configuration → Application settings**: add `WEBSITES_PORT=5000` and `SERVER_PORT=5000`.
+3. **Configuration → General settings → Health check path**: `/actuator/health`.
+4. Download the publish profile from the target (app for F1, staging slot for blue-green) into the secret.
+5. Add `AZURE_WEBAPP_NAME` and `AZURE_WEBAPP_URL` secrets (URL is the region-specific default domain, e.g. `https://bpcalculator-ggbkhjemapd4d0hd.austriaeast-01.azurewebsites.net`).
 
 ### Approval / authorization gate
 
