@@ -54,8 +54,35 @@ Set these repository secrets (Settings -> Secrets and variables -> Actions):
 |---|---|
 | `DOCKERHUB_USERNAME` | Docker Hub username |
 | `DOCKERHUB_TOKEN` | Docker Hub access token (not your password) |
+| `SONAR_TOKEN` | SonarCloud token with "Execute Analysis" permission |
+| `SONAR_ORGANIZATION` | SonarCloud organization key |
+| `SONAR_PROJECT_KEY` | SonarCloud project key |
 
 Image tags produced: `latest` (default branch), branch name, `sha-<commit>`, and `v1.2.3` / `1.2` for git tags. Pin deploys to an immutable tag (`sha-...` or `vX.Y.Z`) rather than `latest`.
+
+## Static analysis: SonarQube / SonarCloud
+
+The pipeline runs a SonarCloud analysis after tests and **fails the build if the quality gate fails** (`sonar.qualitygate.wait=true`). Coverage is fed from the JaCoCo XML report (`target/site/jacoco/jacoco.xml`).
+
+One-time setup:
+
+1. Sign in to <https://sonarcloud.io> with GitHub and **import** the `BP-Calculator` repository.
+2. Copy the **organization key** and **project key** shown by SonarCloud (Project -> Information).
+3. Generate a token: **My Account -> Security -> Generate Tokens** (type "Project Analysis").
+4. Add `SONAR_TOKEN`, `SONAR_ORGANIZATION`, and `SONAR_PROJECT_KEY` as GitHub secrets.
+
+Run the same analysis locally (requires a token):
+
+```sh
+mvn -B clean verify
+mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+  -Dsonar.host.url=https://sonarcloud.io \
+  -Dsonar.organization=<org> \
+  -Dsonar.projectKey=<project> \
+  -Dsonar.token=<token>
+```
+
+To use a **self-hosted SonarQube** instead, point `sonar.host.url` at your server (e.g. `http://localhost:9000`) and use a token generated there; no SonarCloud organization/project-key secrets are needed.
 
 ## Deploy to Azure (App Service - Web App for Containers)
 

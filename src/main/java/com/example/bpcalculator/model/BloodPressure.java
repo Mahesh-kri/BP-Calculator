@@ -25,7 +25,7 @@ public class BloodPressure {
     @Max(value = DIASTOLIC_MAX, message = "{bp.diastolic.max}")
     private Integer diastolic;  // mmHG
 
-    // calculate BP category using standard NHS thresholds
+    // calculate BP category using inclusive lower limits (e.g. 140/90 is High)
     public BpCategory getCategory() {
         if (systolic == null || diastolic == null) {
             return null;
@@ -33,7 +33,7 @@ public class BloodPressure {
         if (systolic < 90 || diastolic < 60) {
             return BpCategory.LOW;
         }
-        if (systolic >= 141 || diastolic >= 91) {
+        if (systolic >= 140 || diastolic >= 90) {
             return BpCategory.HIGH;
         }
         if (systolic >= 121 || diastolic >= 81) {
