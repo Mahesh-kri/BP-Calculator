@@ -44,11 +44,16 @@ docker compose up --build
 
 The app is then available at http://localhost:5000
 
-## CI: publish to Docker Hub
+## CI/CD pipeline
 
-`.github/workflows/build-and-push.yml` runs tests, builds the image, and pushes it to Docker Hub on every push to `master`/`main` and on `v*` tags.
+`.github/workflows/build-and-push.yml` runs on every push to `master`/`main` and on `v*` tags:
 
-Set these repository secrets (Settings -> Secrets and variables -> Actions):
+1. **test** – unit + integration + BDD tests, JaCoCo coverage gate, SpotBugs, SonarCloud quality gate.
+2. **security** – OWASP dependency-check (fails on CVSS >= 9), SARIF uploaded to GitHub code scanning.
+3. **build-and-push** – builds and pushes the image to Docker Hub, then scans it with Trivy (fails on HIGH/CRITICAL) and uploads SARIF.
+4. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys a zero-traffic revision, smoke tests it, then blue-green cuts traffic over.
+
+Set these repository/environment secrets (Settings -> Secrets and variables -> Actions):
 
 | Secret | Description |
 |---|---|
@@ -57,6 +62,10 @@ Set these repository secrets (Settings -> Secrets and variables -> Actions):
 | `SONAR_TOKEN` | SonarCloud token with "Execute Analysis" permission |
 | `SONAR_ORGANIZATION` | SonarCloud organization key |
 | `SONAR_PROJECT_KEY` | SonarCloud project key |
+| `NVD_API_KEY` | NVD API key for dependency-check (recommended; without it the NVD sync is slow) |
+| `AZURE_WEBAPP_NAME` | Web App name (e.g. `bpcalculator`) |
+| `AZURE_WEBAPP_URL` | Base URL, e.g. `https://bpcalculator-ggbkhjemapd4d0hd.austriaeast-01.azurewebsites.net` |
+| `AZURE_WEBAPP_PUBLISH_PROFILE` | Publish profile XML (production slot, or the staging slot when using slots) |
 
 Image tags produced: `latest` (default branch), branch name, `sha-<commit>`, and `v1.2.3` / `1.2` for git tags. Pin deploys to an immutable tag (`sha-...` or `vX.Y.Z`) rather than `latest`.
 
@@ -84,46 +93,52 @@ mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
 
 To use a **self-hosted SonarQube** instead, point `sonar.host.url` at your server (e.g. `http://localhost:9000`) and use a token generated there; no SonarCloud organization/project-key secrets are needed.
 
-## Deploy to Azure (App Service - Web App for Containers)
+## Security scanning
 
-The app is stateless (no database; theme persists in browser `localStorage`), so any number of instances/slots can run without sticky sessions.
-
-1. Build and push the image (via CI above) — e.g. `youruser/bpcalculator:v1.0.0`.
-2. In Azure, create the Web App for Containers and point it at that image and port `5000`.
-3. Add the Docker Hub credentials as the app's container registry settings so it can pull from the registry.
-4. Set the health check path to `/actuator/health`.
-5. Runtime config is env-driven: the app listens on `SERVER_PORT` (default `5000`). App Service sets `WEBSITES_PORT`.
-
-Azure always routes to the container's port 80/8080 by convention if you don't set it, so explicitly set the app setting:
+**Dependencies (OWASP dependency-check)** — runs in the `security` job under the `security` Maven profile and fails on CVSS >= 9. Reports are written to `target/dependency-check/` (HTML, JSON, SARIF) and the SARIF is uploaded to GitHub code scanning.
 
 ```sh
-az webapp config appsettings set \
-  --resource-group <rg> --name <app> \
-  --settings WEBSITES_PORT=5000 SERVER_PORT=5000
+mvn -B -Psecurity org.owasp:dependency-check-maven:check -DnvdApiKey=<key>
 ```
 
-### Blue-green with deployment slots
+**Container image (Trivy)** — after the image is pushed, Trivy scans it by digest and fails on `HIGH`/`CRITICAL` (fixed CVEs only). Results are uploaded as SARIF.
 
-Web App for Containers provides **deployment slots** (e.g. `staging`). Create a staging slot, deploy the new image there, warm it up, then swap into production — traffic switches with no downtime, and swapping back rolls back.
+**Dependabot** — `.github/dependabot.yml` opens weekly PRs for Maven, GitHub Actions, and Docker base-image updates.
 
-```sh
-# one-time: create a staging slot
-az webapp deployment slot create \
-  --resource-group <rg> --name <app> --slot staging \
-  --configuration-source <app>
+## Deploy to Azure Web App for Containers
 
-# deploy the new image to staging
-az webapp config container set \
-  --resource-group <rg> --name <app> --slot staging \
-  --docker-custom-image-name youruser/bpcalculator:v1.0.1 \
-  --docker-registry-server-url https://index.docker.io
+The app is stateless (no database; theme persists in browser `localStorage`), so a staging slot can run alongside production without sticky sessions.
 
-# warm up + verify, then swap staging -> production
-az webapp deployment slot swap \
-  --resource-group <rg> --name <app> --slot staging --target-slot production
-```
+The deploy job uses **publish profile** authentication (no Entra ID / service principal needed). It deploys the immutable `sha-<commit>` image with `azure/webapps-deploy`, then polls `AZURE_WEBAPP_URL/actuator/health`.
 
-Keep image tags immutable and configuration in env vars (which are "sticky"/slot-specific as needed) so the same image can serve either color.
+### Free (F1) plan — direct deploy
+
+Free/Basic tiers have no deployment slots, so the image is deployed straight to production. The app restarts on the new image. Set the `AZURE_WEBAPP_PUBLISH_PROFILE` secret to the **production** publish profile, and leave the `DEPLOY_SLOT` repository variable unset.
+
+### Standard S1+ — slot-based blue-green
+
+On Standard S1 or higher, use the `staging` slot + Auto swap:
+
+1. Create the **staging** slot (clone settings from production).
+2. Download the **staging slot's** publish profile into `AZURE_WEBAPP_PUBLISH_PROFILE`.
+3. On the staging slot: **Configuration → General settings → Auto swap → On**, target **production**.
+4. Add a repository **variable** `DEPLOY_SLOT=staging` (Settings → Secrets and variables → Actions → Variables).
+
+Flow: `webapps-deploy` pushes the image to staging → App Service warms up and auto-swaps into production → the job smoke-tests production. No ARM/Entra call is made by CI.
+
+### One-time setup (Azure portal, no Entra ID)
+
+1. Use an existing **Web App for Containers** (Linux) or create one. It can pull `youruser/bpcalculator:latest` from Docker Hub.
+2. **Configuration → Application settings**: add `WEBSITES_PORT=5000` and `SERVER_PORT=5000`.
+3. **Configuration → General settings → Health check path**: `/actuator/health`.
+4. Download the publish profile from the target (app for F1, staging slot for blue-green) into the secret.
+5. Add `AZURE_WEBAPP_NAME` and `AZURE_WEBAPP_URL` secrets (URL is the region-specific default domain, e.g. `https://bpcalculator-ggbkhjemapd4d0hd.austriaeast-01.azurewebsites.net`).
+
+### Approval / authorization gate
+
+The `deploy` job uses `environment: production`. In **Settings -> Environments -> production**, add **Required reviewers** (and optionally a wait timer or deployment branch rule limited to `main`). A deploy then pauses until a reviewer approves it, which is the authorization gate for production.
+
+Keep image tags immutable (`sha-...`/`vX.Y.Z`) so each deployment is reproducible.
 
 
 ## Features
