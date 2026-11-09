@@ -49,9 +49,9 @@ The app is then available at http://localhost:5000
 `.github/workflows/build-and-push.yml` runs on every push to `master`/`main` and on `v*` tags:
 
 1. **test** – unit + integration + BDD tests, JaCoCo coverage gate, SpotBugs, SonarCloud quality gate.
-2. **security** – OWASP dependency-check (fails on CVSS >= 9), SARIF uploaded to GitHub code scanning.
+2. **security** – OWASP dependency-check (CVSS >= 9), SARIF uploaded to GitHub code scanning. Runs after `test` (reuses the Maven cache), is **advisory/non-blocking**, and is capped at 30 minutes so a slow NVD sync never holds up a release. The blocking CVE gate is Trivy in `build-and-push`.
 3. **build-and-push** – builds and pushes the image to Docker Hub, then scans it with Trivy (fails on HIGH/CRITICAL) and uploads SARIF.
-4. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys a zero-traffic revision, smoke tests it, then blue-green cuts traffic over.
+4. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys the new image and smoke tests `/actuator/health`.
 
 Set these repository/environment secrets (Settings -> Secrets and variables -> Actions):
 
@@ -95,7 +95,7 @@ To use a **self-hosted SonarQube** instead, point `sonar.host.url` at your serve
 
 ## Security scanning
 
-**Dependencies (OWASP dependency-check)** — runs in the `security` job under the `security` Maven profile and fails on CVSS >= 9. Reports are written to `target/dependency-check/` (HTML, JSON, SARIF) and the SARIF is uploaded to GitHub code scanning.
+**Dependencies (OWASP dependency-check)** — runs in the `security` job under the `security` Maven profile and flags CVSS >= 9. Reports are written to `target/dependency-check/` (HTML, JSON, SARIF) and the SARIF is uploaded to GitHub code scanning. This job is advisory (`continue-on-error`), capped at 30 minutes, and is not a dependency of the build/deploy, so NVD sync time cannot block a release. The first run downloads the NVD database (a few minutes with `NVD_API_KEY`); the `~/.m2/repository/org/owasp/dependency-check-data` cache makes later runs fast.
 
 ```sh
 mvn -B -Psecurity org.owasp:dependency-check-maven:check -DnvdApiKey=<key>
