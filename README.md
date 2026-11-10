@@ -50,7 +50,7 @@ The app is then available at http://localhost:5000
 
 1. **test** – unit + integration + BDD tests, JaCoCo coverage gate, SpotBugs, SonarCloud quality gate.
 2. **security** – OWASP dependency-check (CVSS >= 9), SARIF uploaded to GitHub code scanning. Runs after `test` (reuses the Maven cache), is **advisory/non-blocking**, and is capped at 30 minutes so a slow NVD sync never holds up a release. The blocking CVE gate is Trivy in `build-and-push`.
-3. **build-and-push** – builds and pushes the image to Docker Hub, then scans it with Trivy (fails on HIGH/CRITICAL) and uploads SARIF.
+3. **build-and-push** – builds and pushes the image to Docker Hub, uploads a Trivy SARIF report with all severities (advisory), then fails only if fixable HIGH/CRITICAL CVEs are found.
 4. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys the new image and smoke tests `/actuator/health`.
 
 Set these repository/environment secrets (Settings -> Secrets and variables -> Actions):
@@ -101,7 +101,7 @@ To use a **self-hosted SonarQube** instead, point `sonar.host.url` at your serve
 mvn -B -Psecurity org.owasp:dependency-check-maven:check -DnvdApiKey=<key>
 ```
 
-**Container image (Trivy)** — after the image is pushed, Trivy scans it by digest and fails on `HIGH`/`CRITICAL` (fixed CVEs only). Results are uploaded as SARIF.
+**Container image (Trivy)** — after the image is pushed, Trivy scans it by digest twice. The first scan is **advisory**: it uploads a SARIF report with **all severities** (fixed CVEs only) to GitHub code scanning so LOW/MEDIUM findings are visible. The second scan is the **blocking gate** and fails only on fixable `HIGH`/`CRITICAL` CVEs. (`trivy-action` drops the `severity` filter when producing SARIF unless `limit-severities-for-sarif` is set, so the report and the gate are separate steps.)
 
 **Dependabot** — `.github/dependabot.yml` opens weekly PRs for Maven, GitHub Actions, and Docker base-image updates.
 
