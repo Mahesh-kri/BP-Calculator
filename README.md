@@ -32,11 +32,11 @@ endpoint.
 
 ```sh
 cd e2e
-npm ci
-npx playwright install chromium
-npm test                       # against http://localhost:5000
+npm ci --ignore-scripts
+npm run install:browsers             # Playwright + OS deps (needs sudo on Linux)
+npm test                             # against http://localhost:5000
 BASE_URL=https://your-app npm test   # against a deployed instance
-npx playwright show-report     # after a run with the HTML reporter
+npm run report                       # after a run with the HTML reporter
 ```
 
 In CI the `e2e` job runs the suite against the exact image that was just pushed,

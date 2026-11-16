@@ -172,8 +172,8 @@ jobs:
       - name: Install Playwright
         working-directory: e2e
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
+          npm ci --ignore-scripts
+          npm run install:browsers
 
       - name: Start application container
         run: |
@@ -193,7 +193,7 @@ jobs:
         working-directory: e2e
         env:
           BASE_URL: http://localhost:5000
-        run: npx playwright test
+        run: npm test
 
       - name: Upload Playwright report
         if: always()
