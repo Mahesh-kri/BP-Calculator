@@ -148,8 +148,69 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy
 
-  deploy:
+  e2e:
     needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Start application container
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name bp-e2e -p 5000:5000 "${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:5000/actuator/health | grep -q '"status":"UP"'; then
+              echo "Application is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs bp-e2e
+          exit 1
+
+      - name: Run Playwright tests
+        working-directory: e2e
+        env:
+          BASE_URL: http://localhost:5000
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+      - name: Stop application container
+        if: always()
+        run: docker rm -f bp-e2e || true
+
+  deploy:
+    needs: [build-and-push, e2e]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
