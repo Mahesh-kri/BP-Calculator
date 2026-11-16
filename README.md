@@ -42,6 +42,22 @@ npm run report                       # after a run with the HTML reporter
 In CI the `e2e` job runs the suite against the exact image that was just pushed,
 and the HTML report/traces are uploaded as the `playwright-report` artifact.
 
+## Performance test (k6)
+
+`perf/k6/load-test.js` is a [k6](https://k6.io/) script that ramps to 10 virtual
+users for ~1m40s, exercising the home page, a POST calculation for each
+category, and `/actuator/health`. It fails if thresholds are breached
+(`p(95)<1500ms`, `p(99)<3000ms`, error rate `<1%`, checks `>99%`).
+
+```sh
+docker run --rm --network host -e BASE_URL=http://localhost:5000 \
+  -v "$PWD/perf:/perf" grafana/k6:0.54.0 run /perf/k6/load-test.js
+```
+
+In CI the `performance` job runs this against the pushed image and uploads the
+`k6-results` artifact (`summary.json`). `deploy` depends on it, so a threshold
+breach blocks release.
+
 ## Docker
 
 Build the image:
@@ -72,7 +88,8 @@ The app is then available at http://localhost:5000
 2. **security** – OWASP dependency-check (CVSS >= 9), SARIF uploaded to GitHub code scanning. Runs after `test` (reuses the Maven cache), is **advisory/non-blocking**, and is capped at 30 minutes so a slow NVD sync never holds up a release. The blocking CVE gate is Trivy in `build-and-push`.
 3. **build-and-push** – builds and pushes the image to Docker Hub, uploads a Trivy SARIF report with all severities (advisory), then fails only if fixable HIGH/CRITICAL CVEs are found.
 4. **e2e** – starts the pushed image on the runner and runs the Playwright browser suite against it; the report is uploaded as an artifact.
-5. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys the new image and smoke tests `/actuator/health`.
+5. **performance** – runs a k6 load test against the pushed image and enforces p95/p99 latency and error-rate thresholds; the JSON summary is uploaded as an artifact.
+6. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys the new image and smoke tests `/actuator/health`.
 
 Set these repository/environment secrets (Settings -> Secrets and variables -> Actions):
 
