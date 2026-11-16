@@ -18,9 +18,29 @@ The application starts on http://localhost:5000
 
 ## Test
 
+Unit, integration, and BDD tests:
+
 ```sh
 mvn test
 ```
+
+## End-to-end tests (Playwright)
+
+The `e2e/` project contains browser tests for the form, all four categories, the
+inclusive `140/90` boundary, validation errors, the privacy page, and the health
+endpoint.
+
+```sh
+cd e2e
+npm ci
+npx playwright install chromium
+npm test                       # against http://localhost:5000
+BASE_URL=https://your-app npm test   # against a deployed instance
+npx playwright show-report     # after a run with the HTML reporter
+```
+
+In CI the `e2e` job runs the suite against the exact image that was just pushed,
+and the HTML report/traces are uploaded as the `playwright-report` artifact.
 
 ## Docker
 
@@ -51,7 +71,8 @@ The app is then available at http://localhost:5000
 1. **test** – unit + integration + BDD tests, JaCoCo coverage gate, SpotBugs, SonarCloud quality gate.
 2. **security** – OWASP dependency-check (CVSS >= 9), SARIF uploaded to GitHub code scanning. Runs after `test` (reuses the Maven cache), is **advisory/non-blocking**, and is capped at 30 minutes so a slow NVD sync never holds up a release. The blocking CVE gate is Trivy in `build-and-push`.
 3. **build-and-push** – builds and pushes the image to Docker Hub, uploads a Trivy SARIF report with all severities (advisory), then fails only if fixable HIGH/CRITICAL CVEs are found.
-4. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys the new image and smoke tests `/actuator/health`.
+4. **e2e** – starts the pushed image on the runner and runs the Playwright browser suite against it; the report is uploaded as an artifact.
+5. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys the new image and smoke tests `/actuator/health`.
 
 Set these repository/environment secrets (Settings -> Secrets and variables -> Actions):
 
