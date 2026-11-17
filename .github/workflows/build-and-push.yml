@@ -209,8 +209,60 @@ jobs:
         if: always()
         run: docker rm -f bp-e2e || true
 
+  performance:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Start application container
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name bp-perf -p 5000:5000 "${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:5000/actuator/health | grep -q '"status":"UP"'; then
+              echo "Application is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs bp-perf
+          exit 1
+
+      - name: Run k6 load test
+        run: |
+          set -euo pipefail
+          mkdir -p perf/results
+          docker run --rm --network host \
+            --user "$(id -u):$(id -g)" \
+            -e BASE_URL=http://localhost:5000 \
+            -v "$PWD/perf:/perf" \
+            grafana/k6:0.54.0 run \
+              --summary-export=/perf/results/summary.json \
+              /perf/k6/load-test.js
+
+      - name: Upload k6 results
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: k6-results
+          path: perf/results
+          retention-days: 7
+
+      - name: Stop application container
+        if: always()
+        run: docker rm -f bp-perf || true
+
   deploy:
-    needs: [build-and-push, e2e]
+    needs: [build-and-push, e2e, performance]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
