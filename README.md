@@ -89,7 +89,8 @@ The app is then available at http://localhost:5000
 3. **build-and-push** – builds and pushes the image to Docker Hub, uploads a Trivy SARIF report with all severities (advisory), then fails only if fixable HIGH/CRITICAL CVEs are found.
 4. **e2e** – starts the pushed image on the runner and runs the Playwright browser suite against it; the report is uploaded as an artifact.
 5. **performance** – runs a k6 load test against the pushed image and enforces p95/p99 latency and error-rate thresholds; the JSON summary is uploaded as an artifact.
-6. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys the new image and smoke tests `/actuator/health`.
+6. **penetration** – runs an OWASP ZAP baseline scan against the pushed image and uploads HTML/JSON reports; advisory, so low/medium alerts do not block a release.
+7. **deploy** – only on `main`, gated by the `production` GitHub Environment, deploys the new image and smoke tests `/actuator/health`.
 
 Set these repository/environment secrets (Settings -> Secrets and variables -> Actions):
 
@@ -142,6 +143,15 @@ mvn -B -Psecurity org.owasp:dependency-check-maven:check -DnvdApiKey=<key>
 **Container image (Trivy)** — after the image is pushed, Trivy scans it by digest twice. The first scan is **advisory**: it uploads a SARIF report with **all severities** (fixed CVEs only) to GitHub code scanning so LOW/MEDIUM findings are visible. The second scan is the **blocking gate** and fails only on fixable `HIGH`/`CRITICAL` CVEs. (`trivy-action` drops the `severity` filter when producing SARIF unless `limit-severities-for-sarif` is set, so the report and the gate are separate steps.)
 
 **Dependabot** — `.github/dependabot.yml` opens weekly PRs for Maven, GitHub Actions, and Docker base-image updates.
+
+**Dynamic/penetration test (OWASP ZAP)** — the `penetration` job starts the pushed image and runs `zap-baseline.py` against `http://localhost:5000`. It spider-crawls the pages and applies ZAP's passive rules, producing `zap-report.html` and `zap-report.json` in the `zap-report` artifact. The step is advisory (`continue-on-error`) because a baseline scan reports informational/low alerts on a normal app; the image's HIGH/CRITICAL CVE gate remains Trivy. To run it locally:
+
+```sh
+mkdir -p zap && chmod 777 zap
+docker run --rm --network host -v "$PWD/zap:/zap/wrk/:rw" \
+  ghcr.io/zaproxy/zaproxy:stable \
+  zap-baseline.py -t http://localhost:5000 -r zap-report.html -J zap-report.json
+```
 
 ## Deploy to Azure Web App for Containers
 
