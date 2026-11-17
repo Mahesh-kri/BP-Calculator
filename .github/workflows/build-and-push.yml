@@ -76,7 +76,7 @@ jobs:
           mvn -B -Psecurity org.owasp:dependency-check-maven:check "${args[@]}"
       - name: Upload dependency-check SARIF
         if: always() && hashFiles('target/dependency-check/dependency-check-report.sarif') != ''
-        uses: github/codeql-action/upload-sarif@a3d1b77a1ba1550fbb5c74db1dc3a11f4a481126 # v3
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: target/dependency-check/dependency-check-report.sarif
           category: dependency-check
@@ -143,7 +143,7 @@ jobs:
 
       - name: Upload Trivy SARIF
         if: always() && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@a3d1b77a1ba1550fbb5c74db1dc3a11f4a481126 # v3
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-results.sarif
           category: trivy
