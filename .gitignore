@@ -51,4 +51,5 @@ e2e/blob-report/
 
 # Scan output
 zap/
+zap-active/
 perf/results/
