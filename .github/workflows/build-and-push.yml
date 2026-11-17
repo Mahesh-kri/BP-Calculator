@@ -261,6 +261,57 @@ jobs:
         if: always()
         run: docker rm -f bp-perf || true
 
+  penetration:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Start application container
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name bp-zap -p 5000:5000 "${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:5000/actuator/health | grep -q '"status":"UP"'; then
+              echo "Application is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs bp-zap
+          exit 1
+
+      - name: Run OWASP ZAP baseline scan
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p zap && chmod 777 zap
+          docker run --rm --network host \
+            -v "$PWD/zap:/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:5000 \
+              -r zap-report.html -J zap-report.json
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: zap-report
+          path: zap/
+          retention-days: 7
+
+      - name: Stop application container
+        if: always()
+        run: docker rm -f bp-zap || true
+
   deploy:
     needs: [build-and-push, e2e, performance]
     if: github.ref == 'refs/heads/main'
