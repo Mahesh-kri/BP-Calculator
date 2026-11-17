@@ -293,12 +293,15 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          mkdir -p zap && chmod 777 zap
-          docker run --rm --network host \
-            -v "$PWD/zap:/zap/wrk/:rw" \
+          mkdir -p zap
+          docker create --name zap-baseline --network host \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py -t http://localhost:5000 \
               -r zap-report.html -J zap-report.json
+          docker start -a zap-baseline || true
+          docker cp zap-baseline:/zap/wrk/zap-report.html zap/ || true
+          docker cp zap-baseline:/zap/wrk/zap-report.json zap/ || true
+          docker rm -f zap-baseline || true
 
       - name: Upload ZAP report
         if: always()
@@ -345,12 +348,15 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          mkdir -p zap-active && chmod 777 zap-active
-          docker run --rm --network host \
-            -v "$PWD/zap-active:/zap/wrk/:rw" \
+          mkdir -p zap-active
+          docker create --name zap-full-scan --network host \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py -t http://localhost:5000 \
               -r zap-active.html -J zap-active.json
+          docker start -a zap-full-scan || true
+          docker cp zap-full-scan:/zap/wrk/zap-active.html zap-active/ || true
+          docker cp zap-full-scan:/zap/wrk/zap-active.json zap-active/ || true
+          docker rm -f zap-full-scan || true
 
       - name: Upload ZAP active report
         if: always()

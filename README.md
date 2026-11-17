@@ -148,19 +148,25 @@ mvn -B -Psecurity org.owasp:dependency-check-maven:check -DnvdApiKey=<key>
 **Dynamic/penetration test (OWASP ZAP)** — the `penetration` job starts the pushed image and runs `zap-baseline.py` against `http://localhost:5000`. It spider-crawls the pages and applies ZAP's passive rules, producing `zap-report.html` and `zap-report.json` in the `zap-report` artifact. The step is advisory (`continue-on-error`) because a baseline scan reports informational/low alerts on a normal app; the image's HIGH/CRITICAL CVE gate remains Trivy. To run it locally:
 
 ```sh
-mkdir -p zap && chmod 777 zap
-docker run --rm --network host -v "$PWD/zap:/zap/wrk/:rw" \
-  ghcr.io/zaproxy/zaproxy:stable \
+mkdir -p zap
+docker create --name zap-baseline --network host ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py -t http://localhost:5000 -r zap-report.html -J zap-report.json
+docker start -a zap-baseline || true
+docker cp zap-baseline:/zap/wrk/zap-report.html zap/
+docker cp zap-baseline:/zap/wrk/zap-report.json zap/
+docker rm -f zap-baseline
 ```
 
 **Active scan (`zap-active` job)** — `zap-full-scan.py` performs real active attacks: it sends SQL injection, XSS, command-injection and path-traversal payloads at forms and parameters, fuzzes URLs, and checks for exploitable server behaviour. It targets the disposable container on the runner (never the Azure app), is advisory, and uploads `zap-active.html`/`zap-active.json` as the `zap-active-report` artifact. Local equivalent:
 
 ```sh
-mkdir -p zap-active && chmod 777 zap-active
-docker run --rm --network host -v "$PWD/zap-active:/zap/wrk/:rw" \
-  ghcr.io/zaproxy/zaproxy:stable \
+mkdir -p zap-active
+docker create --name zap-full-scan --network host ghcr.io/zaproxy/zaproxy:stable \
   zap-full-scan.py -t http://localhost:5000 -r zap-active.html -J zap-active.json
+docker start -a zap-full-scan || true
+docker cp zap-full-scan:/zap/wrk/zap-active.html zap-active/
+docker cp zap-full-scan:/zap/wrk/zap-active.json zap-active/
+docker rm -f zap-full-scan
 ```
 
 ## Deploy to Azure Web App for Containers
